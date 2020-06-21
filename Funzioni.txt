@@ -1,0 +1,49 @@
+
+CREATE FUNCTION `CalRitardoTreno`(`idtr` INT(11)) RETURNS INT(100)  
+BEGIN  
+    DECLARE diff INT(100);
+    DECLARE UltOE TIME;
+    DECLARE UltOP TIME;
+    SET diff = 0;
+
+    SELECT MAX(posizione.Orario_Effettivo) into UltOE 
+    FROM posizione
+    WHERE idtr=posizione.Treno;
+    
+    SELECT posizione.Orario_Previsto into UltOP
+    FROM posizione
+    WHERE idtr=posizione.Treno AND UltOE=posizione.Orario_Effettivo;
+    
+    IF(UltOE>UltOP)
+    THEN
+    	SET diff = TIMESTAMPDIFF(MINUTE,UltOP,UltOE);
+    END IF;
+    
+    RETURN diff;
+END
+
+CREATE FUNCTION `PercorsoTratta`(`Npart` INT(100), `IDTratta` INT) RETURNS text CHARSET latin1
+BEGIN
+    DECLARE Nferm INT(100);
+    DECLARE str varchar(100);
+    DECLARE staz varchar(100);
+    DECLARE orario TIME;
+    DECLARE i INT(100);
+    
+    SET str=" ";
+    SET i=Npart;
+    
+    SELECT COUNT(fermata.Stazione) INTO Nferm /*calcola il numero di fermate che ha la tratta*/
+    FROM fermata
+    WHERE fermata.Tratta=IDTratta;
+    
+    WHILE i<Nferm+1 DO
+   		SELECT  fermata.Stazione, fermata.Orario_previsto INTO staz, orario 
+        FROM fermata
+        WHERE fermata.Tratta = IDTratta AND fermata.Numero = i;
+        SET i = i + 1;
+        SET str = CONCAT(str, " ",staz, " ", orario); /*concatena il nome e l'orario della fermata*/
+   END WHILE;
+   
+   RETURN str;
+END

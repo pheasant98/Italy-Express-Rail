@@ -1,0 +1,74 @@
+CREATE TRIGGER `VerStraordinario` AFTER INSERT ON `tratta`
+ FOR EACH ROW BEGIN
+    IF(NEW.Straordinario='False') THEN
+    UPDATE tratta SET Data_Inizio=NULL, Data_Fine=NULL
+    WHERE ID=NEW.ID;
+	END IF;
+END
+
+CREATE TRIGGER `OrarioLibero` BEFORE INSERT ON `controlla` FOR EACH ROW BEGIN 
+BEGIN 
+    DECLARE pp TIME;
+    DECLARE ap TIME;
+    DECLARE flag INT(100);
+    DECLARE ErrorCode CONDITION FOR SQLSTATE '45000';
+    SET @err_mess = 'inserimento non valido orario già assegnato';
+    SET flag = 0;
+    
+        SELECT tratta.Partenza_Previsto, tratta.Arrivo_Previsto INTO pp, ap 
+        FROM (controlla JOIN treno ON NEW.Treno=treno.ID) JOIN tratta ON treno.Percorso=tratta.ID LIMIT 1;
+
+        SELECT COUNT(controlla.Treno) AS n INTO flag 
+        FROM (controlla JOIN treno ON controlla.Treno=treno.ID) JOIN tratta ON treno.Percorso=tratta.ID
+        WHERE controlla.Controllore=NEW.Controllore AND (pp BETWEEN tratta.Partenza_Previsto AND tratta.Arrivo_Previsto OR ap BETWEEN tratta.Partenza_Previsto AND tratta.Arrivo_Previsto);
+
+        IF(flag>0)
+        THEN
+            SIGNAL ErrorCode SET MESSAGE_TEXT=@err_mess;
+        END IF;
+END
+
+CREATE TRIGGER `ControlloeCreaPrenotazione` BEFORE INSERT ON `biglietto` FOR EACH ROW 
+BEGIN
+    DECLARE type varchar(100);
+    DECLARE P INT(100);
+    DECLARE PO INT(100);
+    DECLARE ErrorCode CONDITION FOR SQLSTATE '45000';
+    SET @err_mess = 'ERRORE RENOTAZIONE NON VALIDA';
+    SET @err_mess2 = 'ERRORE PRENOTAZIONE NON VALIDA POSTI ESAURITI';
+    
+    IF(NEW.Carrozza IS NOT NULL)
+    THEN
+    	SELECT carrozza.Tipo INTO type 
+        FROM carrozza 
+        WHERE carrozza.ID=new.Carrozza;
+        IF(type<>'AltaVelocita')
+        THEN
+            SIGNAL ErrorCode SET MESSAGE_TEXT=@err_mess;
+            SET NEW.Carrozza=NULL;
+        ELSE
+            	SELECT carrozza.Tipo, carrozza.Posti, compone2.Posti_Occupati INTO type, P, PO
+        		FROM (biglietto JOIN carrozza ON NEW.Carrozza=carrozza.ID) JOIN compone2 ON carrozza.ID=compone2.Carrozza
+        		WHERE NEW.Codice=biglietto.Codice;
+
+        	IF(P=PO)
+        	THEN
+         		SIGNAL ErrorCode SET MESSAGE_TEXT=@err_mess2;
+                SET NEW.Carrozza=NULL;
+               	ELSE
+                    UPDATE compone2 SET compone2.Posti_Occupati=compone2.Posti_Occupati+1
+                    WHERE compone2.Carrozza=NEW.Carrozza;
+        	END IF; 
+        END IF;      
+    END IF;  
+END
+
+CREATE TRIGGER `Controllo` BEFORE INSERT ON `carrozza`
+ FOR EACH ROW BEGIN
+
+    IF(NEW.Tipo='Regionale')
+    THEN
+    	SET NEW.Posti_Occupati=NULL; 
+   		SET NEW.Posti=NULL;
+    END IF;
+END

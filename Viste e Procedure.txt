@@ -1,0 +1,89 @@
+
+CREATE PROCEDURE `Tabellone`(`NomeS` VARCHAR(100),`Tfiltro1` TIME, `Tfiltro2` TIME) 
+BEGIN
+	SELECT treno.Tipo, treno.ID, tratta.Stazione_Arrivo, CalRitardoTreno(treno.ID) as ritardo, fermata.Binario, PercorsoTratta(fermata.Numero, fermata.Tratta) as Percorso
+    FROM (fermata JOIN tratta ON fermata.Tratta=tratta.ID) JOIN treno ON tratta.ID=treno.Percorso
+    WHERE fermata.Stazione=NomeS AND fermata.Ferma='True' AND fermata.Orario_previsto BETWEEN Tfiltro1 AND Tfiltro2;
+END
+
+
+CREATE PROCEDURE ServiziAquistati(Nserv INT(10), Imp FLOAT)
+BEGIN
+
+	CREATE TEMPORARY TABLE IF NOT EXISTS VistaApp1 AS                                                                                                                                               
+		SELECT cliente.Codice_Fiscale AS CF, SUM(servizio.Prezzo) AS importo
+		FROM (cliente JOIN servizio ON cliente.Codice_Fiscale=servizio.Cliente)JOIN biglietto ON servizio.Codice=biglietto.Codice
+		WHERE MONTH(biglietto.Data_Validita)='08'
+		GROUP BY cliente.Codice_Fiscale
+		HAVING importo>Imp;
+
+	SELECT cliente.Codice_Fiscale, cliente.Nome, cliente.Cognome, cliente.Recapito_Telefonico, cliente.Email
+	FROM cliente JOIN servizio ON cliente.Codice_Fiscale=servizio.Cliente
+	WHERE cliente.Numero_Servizi>Nserv AND cliente.Codice_Fiscale IN (SELECT CF FROM VistaApp1)
+	GROUP BY  cliente.Codice_Fiscale, cliente.Nome, cliente.Cognome, cliente.Recapito_Telefonico, cliente.Email
+    	HAVING COUNT(*)>Nserv;
+
+	DROP TABLE VistaApp1;
+	
+END
+
+
+CREATE VIEW GrandiStazioni AS
+SELECT stazione.Nome, stazione.Citta, stazione.Indirizzo 
+FROM stazione 
+WHERE stazione.Nome IN(SELECT stazione.Nome
+                       FROM stazione JOIN tratta ON stazione.Nome=tratta.Stazione_Partenza
+                       GROUP BY stazione.Nome
+                       HAVING COUNT(*)>=2)
+                       AND stazione.Nome IN(SELECT stazione.Nome
+                       						FROM stazione JOIN tratta ON stazione.Nome=tratta.Stazione_Arrivo
+                       						GROUP BY stazione.Nome
+                       						HAVING COUNT(*)>=3)
+
+CREATE  PROCEDURE `InfoTreni`(`tipo` VARCHAR(250))
+BEGIN
+ 
+    CREATE TEMPORARY TABLE IF NOT EXISTS NCarr AS
+    SELECT compone2.Treno AS C2T, COUNT(compone2.Carrozza) AS NCarrozze
+    FROM compone2 JOIN carrozza ON compone2.Carrozza=carrozza.ID
+    GROUP BY C2T;
+    
+    CREATE TEMPORARY TABLE IF NOT EXISTS NManC AS
+    SELECT compone2.Treno AS IDC, COUNT(manutenzione.ID) AS NManCarr 
+    FROM (compone2 JOIN carrozza ON compone2.Carrozza= carrozza.ID )JOIN manutenzione ON carrozza.ID=manutenzione.Carrozza
+    GROUP BY IDC;
+    
+    CREATE TEMPORARY TABLE IF NOT EXISTS NManM AS
+    SELECT compone1.Treno AS IDM, COUNT(manutenzione.ID) AS NManMotr 
+    FROM (compone1 JOIN motrice ON compone1.Motrice= motrice.ID )JOIN manutenzione ON motrice.ID=manutenzione.Motrice
+    GROUP BY IDM;
+       
+    SELECT treno.ID, treno.Tipo, NManC.NManCarr, NManM.NManMotr, NCarr.NCarrozze
+    FROM ((treno JOIN NManC ON treno.ID=NManc.IDC) JOIN NCarr ON treno.ID=NCarr.C2T ) JOIN NManM ON treno.ID=NManM.IDM
+    WHERE treno.Tipo = tipo
+    GROUP BY treno.ID, treno.Tipo, NManC.NManCarr, NManM.NManMotr, NCarr.NCarrozze;
+    
+    DROP TABLE NCarr;
+    DROP TABLE NManC;
+    DROP TABLE NManM;
+
+END
+
+CREATE VIEW ElencoOperai AS
+ SELECT dipendente.Codice_Fiscale, dipendente.Nome, dipendente.Cognome, dipendente.Recapito_Telefonico, dipendente.Email, Tratta.ID AS Tratta
+ FROM ((((((dipendente JOIN operaio ON dipendente.Codice_Fiscale=operaio.Codice_Fiscale)JOIN effettua ON operaio.Codice_Fiscale=effettua.Operaio) JOIN 
+ manutenzione ON effettua.Manutenzione=manutenzione.ID) JOIN motrice ON manutenzione.Motrice=motrice.ID) JOIN compone1 ON motrice.ID=compone1.Motrice) JOIN 
+ treno ON compone1.Treno=treno.ID) JOIN tratta ON treno.Percorso=tratta.ID
+ WHERE manutenzione.Descrizione='Saldatura motore' AND (tratta.ID IN (SELECT tratta.ID FROM tratta  WHERE tratta.Stazione_Partenza LIKE 'Milano%') OR tratta.ID IN (SELECT tratta.ID FROM tratta  WHERE tratta.Stazione_Arrivo LIKE 'Milano%') OR tratta.ID IN (SELECT tratta.ID FROM tratta JOIN fermata ON tratta.ID=fermata.Tratta  WHERE fermata.Stazione LIKE 'Milano%'))
+ORDER BY dipendente.Cognome, dipendente.Nome
+
+CREATE VIEW App1 AS
+SELECT tratta.ID AS TID, COUNT(posizione.Check_Point) AS Numero_di_checkpoint
+FROM (tratta JOIN treno ON tratta.ID=treno.Percorso) JOIN posizione ON treno.ID=posizione.Treno
+GROUP BY TID
+
+CREATE VIEW StraordinarioT AS
+SELECT tratta.ID, tratta.Data_Inizio, tratta.Data_Fine, app1.Numero_di_checkpoint, tratta.Stazione_Partenza, tratta.Partenza_Previsto, 
+PercorsoTratta(1, tratta.ID) AS Percorso, tratta.Stazione_Arrivo, tratta.Arrivo_Previsto
+FROM tratta JOIN app1 ON tratta.ID = app1.TID 
+WHERE tratta.Straordinario='True'
